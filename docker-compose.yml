@@ -11,6 +11,7 @@ services:
     environment:
       MCP_HOST: 0.0.0.0              # container-internal; the published port stays loopback
       MCP_PORT: 8000
+      MCP_STATELESS: "1"             # mirrors PaaS: self-contained requests, no sessions
       # MCP_AUTH_TOKEN comes from .env and is enforced everywhere now, including
       # locally. Clients must send "Authorization: Bearer <token>".
     ports:

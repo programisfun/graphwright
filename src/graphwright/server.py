@@ -176,7 +176,11 @@ def build_app() -> Any:
     token = os.getenv('MCP_AUTH_TOKEN')
     check_token(token)
 
-    app: Any = server.streamable_http_app(host=host)
+    # Stateless mode makes each request self-contained: no in-memory session, no
+    # instance affinity. Required for scale-to-zero hosts (Render, Cloud Run) where a
+    # redeploy or spin-down would otherwise drop live sessions.
+    stateless = os.getenv('MCP_STATELESS') == '1'
+    app: Any = server.streamable_http_app(host=host, stateless_http=stateless)
     return BearerTokenMiddleware(app, token)
 
 
@@ -191,7 +195,8 @@ def main() -> None:
     host, port = bind_address()
     app = build_app()
     auth = 'bearer token' if os.getenv('MCP_AUTH_TOKEN') else 'NO AUTH'
-    print(f'graphwright: http://{host}:{port}/mcp ({auth})', flush=True)
+    mode = 'stateless' if os.getenv('MCP_STATELESS') == '1' else 'stateful'
+    print(f'graphwright: http://{host}:{port}/mcp ({auth}, {mode})', flush=True)
     uvicorn.run(app, host=host, port=port)
 
 

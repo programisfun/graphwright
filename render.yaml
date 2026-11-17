@@ -21,3 +21,5 @@ services:
         sync: false          # often the instance id as well — copy from the Aura console
       - key: MCP_AUTH_TOKEN
         generateValue: true  # every request needs Authorization: Bearer <token>
+      - key: MCP_STATELESS
+        value: "1"           # no in-memory sessions: survives spin-down and redeploys

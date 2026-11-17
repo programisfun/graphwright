@@ -119,6 +119,17 @@ verbatim inside and outside the container.
 | `MCP_HOST` | `127.0.0.1` | `0.0.0.0` inside the container, or when `PORT` is set |
 | `MCP_PORT` | `8000` | falls back to `PORT` (PaaS convention) if unset |
 | `MCP_AUTH_TOKEN` | — | **required**: admin token; every request needs `Authorization: Bearer <token>` and all tools are allowed |
+| `MCP_STATELESS` | off | `1` makes every request self-contained (no in-memory MCP session). Set it on scale-to-zero hosts; compose sets it to mirror production |
+
+### Stateless mode
+
+By default the MCP SDK keeps a session per connection in memory. That breaks on any
+host that scales to zero or redeploys: the instance holding the session is gone, and
+the next request may land elsewhere. `MCP_STATELESS=1` makes each POST self-contained,
+so a spin-down, redeploy, or a second instance is harmless.
+
+Verified locally with the flag on: `graphwright: http://0.0.0.0:8000/mcp (bearer token, stateless)`,
+and `read` / `edit` round-trips still work. Compose and `render.yaml` both set it.
 
 ### Authentication model
 
