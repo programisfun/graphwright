@@ -119,6 +119,37 @@ container.
 `MCP_PORT` takes precedence over `PORT`, so **do not set `MCP_PORT` on a PaaS** — the
 platform routes traffic to `PORT`.
 
+### Deduplication (enforced where it matters)
+
+Advice in a tool description reduces duplicates; it does not prevent them. What prevents
+them is a constraint:
+
+```cypher
+CREATE CONSTRAINT component_id_unique IF NOT EXISTS
+FOR (n:Component) REQUIRE n.id IS UNIQUE
+```
+
+Each label has one on `id` (`Account`, `Component`, `Credential`, `Todo`), plus a plain
+index on `name` for fast candidate lookup. Consequences:
+
+- `MERGE (n:Label {id: $id})` is atomic — two clients racing produce one node, not two.
+- A `CREATE` with an existing `id` fails loudly:
+  `Neo.ClientError.Schema.ConstraintValidationFailed`.
+- Names are **not** unique on purpose: two people can be named John. `name` is a label
+  for humans; `id` is the identity.
+
+Client rules, also stated in the `edit` tool description: MERGE on `id`, never on
+`name`, and look the node up before creating it. To find drift that already exists:
+
+```cypher
+MATCH (n)
+WHERE n.name IS NOT NULL
+WITH labels(n)[0] AS label, toLower(trim(n.name)) AS key, collect(n.id) AS ids, count(*) AS c
+WHERE c > 1
+RETURN label, key, ids, c
+ORDER BY c DESC
+```
+
 ### Authentication model
 
 One role only: **admin**. A single shared token grants every tool, including `edit` and

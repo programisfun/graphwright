@@ -98,7 +98,11 @@ async def read(
         'collect(DISTINCT valueType(n[k])) AS types ORDER BY nodes DESC") gives every '
         'property name with its value types across all nodes, and '
         'read("MATCH (n:Person) RETURN n LIMIT 25") shows representative values. '
-        'Follow the same property names, casing and value types.'
+        'Follow the same property names, casing and value types. '
+        'Always MERGE on a stable `id` property, never on `name`: `id` is unique per '
+        'label (Account, Component, Credential, Todo), so a duplicate insert fails. '
+        'Before creating a node, look it up by id, or by a case-insensitive name match, '
+        'to catch near-duplicates first.'
     )
 )
 async def edit(
