@@ -19,6 +19,8 @@ import time
 import urllib.error
 import urllib.request
 
+from deploy_common import client_secret, read_env, require
+
 API = 'https://api.render.com/v1'
 SERVICE_NAME = os.getenv('RENDER_SERVICE_NAME', 'graphwright')
 REPO = os.getenv('RENDER_REPO', 'https://github.com/programisfun/graphwright')
@@ -27,39 +29,19 @@ REGION = os.getenv('RENDER_REGION', 'oregon')
 
 
 def api_key() -> str:
-    """RENDER_API_KEY from env, scripts/.env.deploy, or ~/.render-api-key."""
-    key = os.getenv('RENDER_API_KEY')
-    if key:
-        return key.strip()
-
-    candidates = [
-        pathlib.Path(__file__).parent / '.env',           # scripts/.env
-        pathlib.Path(__file__).parent / '.env.deploy',    # scripts/.env.deploy
-        pathlib.Path.home() / '.render-api-key',          # outside the repo
-    ]
-    for path in candidates:
-        if not path.exists():
-            continue
-        text = path.read_text(encoding='utf-8')
-        for line in text.splitlines():
-            line = line.strip()
-            if line.startswith('RENDER_API_KEY='):
-                value = line.split('=', 1)[1].strip().strip('"').strip("'")
-                if value and 'your_key_here' not in value:
-                    return value
-                if value:
-                    sys.exit(
-                        f'{path} still contains the placeholder. Paste your real key from '
-                        'https://dashboard.render.com/u/settings#api-keys'
-                    )
-        if path.name == '.render-api-key' and text.strip():
-            return text.strip()
-
-    sys.exit(
-        'No API key. Create one at https://dashboard.render.com/u/settings#api-keys '
-        'then either:\n'
-        '  echo "RENDER_API_KEY=rnd_..." > scripts/.env.deploy\n'
-        '  or set RENDER_API_KEY'
+    """RENDER_API_KEY from env, scripts/.env, scripts/.env.deploy, or ~/.render-api-key."""
+    return client_secret(
+        'RENDER_API_KEY',
+        [
+            pathlib.Path(__file__).parent / '.env',
+            pathlib.Path(__file__).parent / '.env.deploy',
+            pathlib.Path.home() / '.render-api-key',
+        ],
+        hint=(
+            'Create a key at https://dashboard.render.com/u/settings#api-keys, then '
+            'add RENDER_API_KEY=rnd_... to scripts/.env'
+        ),
+        allow_bare=True,
     )
 
 
@@ -93,15 +75,14 @@ def call(method: str, path: str, body: dict | None = None) -> object:
 
 
 def env_file_values() -> dict[str, str]:
-    """Read NEO4J_* from .env (via python-dotenv) without printing secrets."""
-    from dotenv import dotenv_values
-
-    values = dotenv_values('.env')
-    required = ('NEO4J_URI', 'NEO4J_USER', 'NEO4J_PASSWORD', 'NEO4J_DATABASE')
-    missing = [name for name in required if not values.get(name)]
-    if missing:
-        sys.exit(f'.env is missing: {", ".join(missing)}')
-    return {name: values[name] for name in required}
+    """Read NEO4J_* from .env without printing secrets."""
+    values = read_env('.env')
+    require(
+        values,
+        ('NEO4J_URI', 'NEO4J_USER', 'NEO4J_PASSWORD', 'NEO4J_DATABASE'),
+        source='.env',
+    )
+    return {key: values[key] for key in ('NEO4J_URI', 'NEO4J_USER', 'NEO4J_PASSWORD', 'NEO4J_DATABASE')}
 
 
 def owner_id() -> str:

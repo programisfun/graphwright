@@ -1,28 +1,19 @@
 ﻿# graphwright-warm
 
-Keep-warm pinger for the [graphwright](https://github.com/programisfun/graphwright) MCP
-service. Lives in its own subfolder because it is a separate deployment with its own
-credential, schedule and hosting provider (Cloudflare Workers, not Render).
+Cloudflare Worker that keeps the [graphwright](https://github.com/programisfun/graphwright)
+MCP service warm. It calls `GET /warm` every 10 minutes; that one request resets both
+Render's 15-minute spin-down and AuraDB's 72-hour inactivity pause, because the endpoint
+runs `RETURN 1`.
 
-Full deployment order (Aura → Render → pinger → client):
-[`../DEPLOYMENT.md`](../DEPLOYMENT.md). Everything specific to the worker is documented
-here and nowhere else.
+Why those timers exist, and the `/health` vs `/warm` split, are documented once in
+[`../DEPLOYMENT.md` §3](../DEPLOYMENT.md#3-keep-warm-pinger). Everything specific to this
+worker — setup, verification, operations, troubleshooting — lives below and nowhere else.
 
-One `GET /warm` every 10 minutes does two jobs:
+## Why a subfolder
 
-| Timer | Idle limit | Reset by |
-| --- | --- | --- |
-| Render free web service | 15 min | any inbound HTTP request |
-| Neo4j AuraDB Free | 72 h | an actual query (`/health` does not touch the DB) |
-
-`graphwright`'s `/warm` endpoint runs `RETURN 1`, so a single call satisfies both. It is
-bearer-token protected; `/health` is the unauthenticated platform probe.
-
-## Why a separate repo
-
-- Different host (Cloudflare vs Render), different deploy command, different secret store.
-- `wrangler.toml` holds the Render URL, so it changes when the service is renamed.
-- The main repo doesn't need `wrangler` state, Node tooling, or a Cloudflare account.
+- Different host (Cloudflare, not Render) and a different deploy command.
+- Its secret is the Render service's `MCP_AUTH_TOKEN`, not the app's own credential.
+- URL, cron and hour window are deployment knobs, not application config.
 
 ## Setup
 

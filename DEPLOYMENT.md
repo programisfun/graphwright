@@ -104,11 +104,11 @@ owner first.
 | Health check | `/health` |
 | Auto-deploy | on commit |
 
-Environment variables:
+Environment variables: the four `NEO4J_*` values from the
+[configuration table](README.md#configuration), plus:
 
 | Key | Value |
 | --- | --- |
-| `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `NEO4J_DATABASE` | from `.env` |
 | `MCP_AUTH_TOKEN` | click **Generate** in the dashboard |
 | `MCP_STATELESS` | `1` |
 
@@ -181,21 +181,12 @@ so `MCP_PORT=7860` is required there.
 
 ## 5. Client config for the deployed service
 
-```jsonc
-{
-  "mcp": {
-    "servers": {
-      "graphwright": {
-        "type": "remote",
-        "url": "https://<service>.onrender.com/mcp",
-        "headers": { "Authorization": "Bearer <MCP_AUTH_TOKEN>" }
-      }
-    }
-  }
-}
-```
+Same block as the [client config in README.md](README.md#client-config), with two
+substitutions:
 
-Prefer an env substitution over a literal secret: `"Bearer {env:GRAPHWRIGHT_TOKEN}"`.
+- `url` → `https://<service>.onrender.com/mcp`
+- `Authorization` → the Render-generated token, preferably via
+  `"Bearer {env:GRAPHWRIGHT_TOKEN}"` so the secret stays out of the file
 
 ## 6. Secrets and rotation
 
@@ -223,9 +214,11 @@ Rotating the MCP token: Render dashboard → Environment → replace → redeplo
 | `402` from Render API | account has no payment method | add a card or create via dashboard |
 | `Unauthorized` from Aura | wrong `NEO4J_USER` | Aura often uses the instance id |
 | `DatabaseNotFound` | wrong `NEO4J_DATABASE` | same — often the instance id |
-| `SSLV3_ALERT_HANDSHAKE_FAILURE` to `*.workers.dev` | local TLS/IPv6 stack | `curl -4 --tlsv1.2` |
-| No `/warm` in Render logs | schedule propagating, or outside the hour window | wait 15 min; check `TZ_OFFSET_HOURS` |
 | Deploy hangs at *"dependency failed to start"* | `depends_on` waits on a service you removed | drop the dependency or restore the service |
+
+Worker-specific symptoms (TLS handshake to `*.workers.dev`, 401/503 from the pinger, no
+`/warm` lines in Render's logs) are covered in
+[`infra/README.md`](infra/README.md#troubleshooting).
 
 ## 8. Deployment checklist
 

@@ -16,6 +16,8 @@ import pathlib
 import sys
 import time
 
+from deploy_common import client_secret, read_env, require
+
 SPACE_NAME = 'graphwright'
 APP_PORT = 7860
 
@@ -32,22 +34,15 @@ IGNORE = [
 ]
 
 
-def values_from(path: str) -> dict[str, str]:
-    from dotenv import dotenv_values
-
-    return {k: v for k, v in dotenv_values(path).items() if v is not None}
-
-
 def token() -> str:
-    import os
-
-    value = os.getenv('HF_TOKEN') or values_from('scripts/.env').get('HF_TOKEN')
-    if not value or 'your_token' in value:
-        sys.exit(
-            'No HF token. Create a write token at https://huggingface.co/settings/tokens '
+    return client_secret(
+        'HF_TOKEN',
+        [pathlib.Path(__file__).parent / '.env'],
+        hint=(
+            'Create a write token at https://huggingface.co/settings/tokens '
             '(no card required) and add HF_TOKEN=hf_... to scripts/.env'
-        )
-    return value
+        ),
+    )
 
 
 def main() -> None:
@@ -68,11 +63,12 @@ def main() -> None:
         print(f'url   : https://{user}-{SPACE_NAME}.hf.space')
         return
 
-    env = values_from('.env')
-    required = ('NEO4J_URI', 'NEO4J_USER', 'NEO4J_PASSWORD', 'NEO4J_DATABASE', 'MCP_AUTH_TOKEN')
-    missing = [key for key in required if not env.get(key)]
-    if missing:
-        sys.exit(f'.env is missing: {", ".join(missing)}')
+    env = read_env('.env')
+    require(
+        env,
+        ('NEO4J_URI', 'NEO4J_USER', 'NEO4J_PASSWORD', 'NEO4J_DATABASE', 'MCP_AUTH_TOKEN'),
+        source='.env',
+    )
 
     print(f'Creating/updating Space {repo_id} (docker, free cpu-basic)')
     api.create_repo(
