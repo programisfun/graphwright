@@ -33,8 +33,9 @@ def api_key() -> str:
         return key.strip()
 
     candidates = [
-        pathlib.Path(__file__).parent / '.env.deploy',   # next to this script
-        pathlib.Path.home() / '.render-api-key',         # outside the repo
+        pathlib.Path(__file__).parent / '.env',           # scripts/.env
+        pathlib.Path(__file__).parent / '.env.deploy',    # scripts/.env.deploy
+        pathlib.Path.home() / '.render-api-key',          # outside the repo
     ]
     for path in candidates:
         if not path.exists():
