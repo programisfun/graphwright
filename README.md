@@ -8,18 +8,18 @@ Two tools, no abstractions, no schema to learn:
 | `read` | `READ` | Runs one Cypher query, returns rows as JSON. Writes are rejected by Neo4j itself. |
 | `edit` | `WRITE` | Runs any Cypher — `CREATE`, `MERGE`, `SET`, `DELETE`, `DETACH DELETE`, index/constraint DDL. Accepts a list to run several statements in one transaction. |
 
+Deployment (AuraDB + Render + keep-warm pinger) is documented separately in
+[`DEPLOYMENT.md`](DEPLOYMENT.md).
+
 ## ⚠️ Trust model
 
-There is **no authentication, no query inspection, and no dry run**. The client is
-expected to be an LLM and is trusted to do destructive things — that is the point.
-The only guardrail is on `read`, which uses Neo4j's `READ` access mode so writes fail.
+There is **no query inspection and no dry run**. The client is expected to be an LLM and is
+trusted to do destructive things — that is the point. The only guardrail is on `read`,
+which uses Neo4j's `READ` access mode so writes fail.
 
-Consequences:
-
-- Bind to loopback (`127.0.0.1`) only, or put auth in front. A public port here is a
-  remote `DETACH DELETE` waiting to happen.
-- Anyone who can reach the port can also run `DROP CONSTRAINT` or create millions of
-  nodes. Treat it like a database shell, because it is one.
+A single admin token (`MCP_AUTH_TOKEN`, required) gates the HTTP endpoint. Anyone holding
+it can run `DETACH DELETE` or `DROP CONSTRAINT`, so treat it like a database shell
+credential and keep the endpoint on loopback unless it is behind HTTPS plus that token.
 
 ### Vocabulary discipline (prompt, not enforcement)
 
@@ -44,7 +44,6 @@ score        2      ["INTEGER NOT NULL", "FLOAT NOT NULL"]
 Names and types in one query — so one label does not accumulate `createdAt` /
 `created_at`, nor a Date next to a String. A second `MATCH (n:Person) RETURN n LIMIT 25`
 shows representative values. This is guidance only — nothing blocks a duplicate label.
-If drift matters, check `read("CALL db.labels()")` yourself, or add a label whitelist.
 Relationship types drift more than labels in practice, because both spellings read
 naturally to a model.
 
@@ -69,21 +68,17 @@ $env:MCP_TRANSPORT='stdio'; uv run graphwright    # stdio instead of HTTP
 docker compose build graphwright && docker compose up -d   # rebuild after code changes
 ```
 
-Neo4j is no longer a service in `docker-compose.yml`, because one `.env` cannot hold
-both the local container password and the Aura credentials. Restore the bundled
-service from git history if you want it back:
+`docker-compose.yml` runs the MCP server only. Neo4j is external because one `.env` cannot
+hold both a local container password and the Aura credentials; restore the bundled service
+from git history if you want it back:
 
 ```powershell
 git show 702e1a8:docker-compose.yml    # the version with the neo4j service
 ```
 
-Smoke test (expects the HTTP server running):
-
-```powershell
-uv run python scripts/smoke_test.py
-```
-
 ## Client config
+
+Point any MCP client at the endpoint and send the token:
 
 ```jsonc
 {
@@ -99,15 +94,15 @@ uv run python scripts/smoke_test.py
 }
 ```
 
-Tools then appear as `graphwright_read` and `graphwright_edit`. The header is not
-optional once `MCP_AUTH_TOKEN` is set — without it every call returns 401.
+Tools then appear as `graphwright_read` and `graphwright_edit`. The header is not optional:
+without it every call returns 401, and there is no unauthenticated mode.
 
 ## Configuration
 
 Settings come from `.env` (gitignored; copy `.env.example`). The app loads it with
 `python-dotenv`, so the same file works for `uv run graphwright` and for the container
-(compose passes it as `env_file`). Neo4j is external (AuraDB); the URI in `.env` is used
-verbatim inside and outside the container.
+(compose passes it as `env_file`). The Neo4j URI is used verbatim inside and outside the
+container.
 
 | Variable | Default | Notes |
 | --- | --- | --- |
@@ -118,205 +113,33 @@ verbatim inside and outside the container.
 | `MCP_TRANSPORT` | `streamable-http` | or `stdio` |
 | `MCP_HOST` | `127.0.0.1` | `0.0.0.0` inside the container, or when `PORT` is set |
 | `MCP_PORT` | `8000` | falls back to `PORT` (PaaS convention) if unset |
-| `MCP_AUTH_TOKEN` | — | **required**: admin token; every request needs `Authorization: Bearer <token>` and all tools are allowed |
-| `MCP_STATELESS` | off | `1` makes every request self-contained (no in-memory MCP session). Set it on scale-to-zero hosts; compose sets it to mirror production |
-
-### Stateless mode
-
-By default the MCP SDK keeps a session per connection in memory. That breaks on any
-host that scales to zero or redeploys: the instance holding the session is gone, and
-the next request may land elsewhere. `MCP_STATELESS=1` makes each POST self-contained,
-so a spin-down, redeploy, or a second instance is harmless.
-
-Verified locally with the flag on: `graphwright: http://0.0.0.0:8000/mcp (bearer token, stateless)`,
-and `read` / `edit` round-trips still work. Compose and `render.yaml` both set it.
-
-### Authentication model
-
-One role only: **admin**. A single shared token (`MCP_AUTH_TOKEN`) grants every tool,
-including `edit` and therefore `DETACH DELETE`. There are no scopes, no per-user
-identity and no audit trail.
-
-- **Required, everywhere.** Local, container, Render — no exceptions. Without it the
-  server exits at startup: no loopback exemption, no opt-out flag.
-- Compared with `hmac.compare_digest` (constant time).
-- `/health` is exempt so platform health checks work.
-- Tokens shorter than 16 characters only produce a warning; generate one with
-  `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
-- Rotating the token = edit `.env`, `docker compose up -d --force-recreate graphwright`,
-  and update every client config.
+| `MCP_AUTH_TOKEN` | — | **required**; generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"` |
+| `MCP_STATELESS` | off | `1` makes each request self-contained; set it on scale-to-zero hosts |
 
 `MCP_PORT` takes precedence over `PORT`, so **do not set `MCP_PORT` on a PaaS** — the
 platform routes traffic to `PORT`.
 
-## Keeping it warm
+### Authentication model
 
-Two independent idle timers will otherwise bite you:
+One role only: **admin**. A single shared token grants every tool, including `edit` and
+therefore `DETACH DELETE`. There are no scopes, no per-user identity and no audit trail.
 
-| Host | Idle limit | What resets it |
-| --- | --- | --- |
-| Render free | 15 min | any inbound HTTP request |
-| AuraDB Free | 72 h | an actual **query** (`/health` does not touch the DB) |
+- **Required, everywhere.** Local, container, Render — no exceptions. Without it the server
+  exits at startup: no loopback exemption, no opt-in flag.
+- Compared with `hmac.compare_digest` (constant time).
+- `/health` is exempt so platform health checks work; `/warm` is not.
+- Tokens shorter than 16 characters only produce a warning.
 
-So the server exposes two probes:
+### Stateless mode
 
-| Endpoint | Auth | Does | Use |
-| --- | --- | --- | --- |
-| `/health` | none | nothing — returns `{"status":"ok"}` | platform health checks |
-| `/warm` | bearer token | runs `RETURN 1`, returns `db_ms` | keep-warm pinger |
+By default the MCP SDK keeps a session per connection in memory. That breaks on any host
+that scales to zero or redeploys: the instance holding the session is gone, and the next
+request may land elsewhere. `MCP_STATELESS=1` makes each POST self-contained, so a
+spin-down, a redeploy, or a second instance is harmless. Compose and `render.yaml` set it.
 
-One `/warm` call satisfies both timers: it is inbound traffic for Render *and* a query
-for Aura.
-
-```powershell
-$t = (Get-Content .env | Select-String '^MCP_AUTH_TOKEN=').Line.Split('=',2)[1]
-Invoke-WebRequest "https://graphwright-kjn8.onrender.com/warm" -Headers @{Authorization="Bearer $t"}
-# {"status":"ok","db_ms":48.9,"row":[{"ok":1}]}
-```
-
-### Pinger: `infra/`
-
-The keep-warm worker lives in this repo under `infra/`:
-
-```
-infra/
-├── warm.js          Cloudflare Worker: cron -> GET /warm
-├── wrangler.toml    schedule, Render URL, local hour window
-└── README.md        step-by-step setup (login, subdomain, secret, verify)
-```
-
-It calls `GET /warm` every 10 minutes, restricted to 08:00-23:00 local so Render's 750
-monthly instance-hours are not exhausted (15 h/day ~ 450 h; 24/7 would be 730 h). It sits
-in a subfolder because it is a separate deployment: different provider (Cloudflare),
-credential (`wrangler secret`) and command (`wrangler deploy`).
-
-Quick start:
-
-```powershell
-cd infra
-npx wrangler@latest login
-npx wrangler@latest secret put MCP_AUTH_TOKEN   # the token Render uses
-npx wrangler@latest deploy --config wrangler.toml
-```
-
-Full runbook, verification and troubleshooting: [`infra/README.md`](infra/README.md).
-
-Without any pinger the service still works: the first call after idle just takes ~60 s
-while Render wakes, which is why client timeouts should be raised to 90 s.
-
-## Deploying to Hugging Face Spaces
-
-> **Blocked as of 2026:** free `cpu-basic` now covers **static Spaces only** — creating a
-> Docker or Gradio Space returns `402 Payment Required` ("requires a PRO subscription").
-> The script is kept for when a PRO plan exists; it works unchanged once the account can
-> create Docker Spaces.
-
-Free-ish Docker onboarding: 2 vCPU / 16 GB, sleeps after ~48 h idle, secrets injected as
-env vars. Deployable entirely through the API.
-
-```powershell
-# once: write token from https://huggingface.co/settings/tokens (no card)
-# add this line to scripts/.env
-# HF_TOKEN=hf_...
-
-uv run python scripts/hf_deploy.py            # create Space, upload, set secrets, poll
-uv run python scripts/hf_deploy.py --status   # stage + URL
-```
-
-The script creates `<you>/graphwright` as a Docker Space, uploads the repo while
-excluding every `.env`, pushes `NEO4J_*` and `MCP_AUTH_TOKEN` as **Space secrets**,
-sets `MCP_HOST=0.0.0.0`, `MCP_PORT=7860`, `MCP_STATELESS=1`, writes the Space README
-with `sdk: docker` front matter, and waits until the runtime reports `RUNNING`.
-
-| | Value |
-| --- | --- |
-| MCP endpoint | `https://<user>-graphwright.hf.space/mcp` |
-| Health | `https://<user>-graphwright.hf.space/health` |
-| Visibility | public Space; the bearer token protects the graph, not the URL |
-| Custom domain | PRO only |
-
-Note the port: HF routes to **7860** by default, so `MCP_PORT=7860` (not 8000) is
-required, otherwise the health check and MCP endpoint are unreachable.
-
-## Deploying to Render (free plan)
-
-Render does not support `docker-compose.yml` — it builds the `Dockerfile` instead, so
-Neo4j cannot live in the same deployment. Pair it with **Neo4j AuraDB Free**:
-
-| | Where |
-| --- | --- |
-| Neo4j | AuraDB Free (200k nodes / 400k relationships, auto-pauses after 72h idle) |
-| graphwright | Render free web service, built from `Dockerfile` |
-
-### Via the API (no dashboard clicking)
-
-```powershell
-# 1. Create an API key: https://dashboard.render.com/u/settings#api-keys
-# 2. Save it next to the script (gitignored), or in $HOME\.render-api-key
-Set-Content scripts\.env.deploy "RENDER_API_KEY=rnd_..." -NoNewline
-
-# 3. Create the service and deploy
-uv run python scripts/render_deploy.py
-```
-
-Key lookup order: `RENDER_API_KEY` env var → `scripts/.env.deploy` → `~/.render-api-key`.
-Keep it out of `.env`: that file holds app config you may copy to a host, while a Render
-key can create or delete every service in the account.
-
-**Known limitation:** Render rejects service creation through the API with
-`402 Payment information is required`, even on the free plan. Create the service once in
-the dashboard, then use this script for redeploys (deploying an existing service works).
-
-The script reads `NEO4J_*` from `.env`, lets Render generate `MCP_AUTH_TOKEN`, creates
-the service if it does not exist (`plan: free`, `region: oregon`, health check
-`/health`), triggers a deploy, and polls until it goes live. `--status` prints the
-current service without deploying.
-
-The repo must be public for this path (it is), otherwise Render needs the GitHub App
-installed on the owner first.
-
-### Via the dashboard
-
-1. Create an AuraDB Free instance, note the `neo4j+s://...` URI, user and database
-   (Aura often uses the instance id for both, not `neo4j`).
-2. Push this repo, then apply `render.yaml` (Blueprint) or create a Docker web service.
-3. Set `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `NEO4J_DATABASE` and a strong
-   `MCP_AUTH_TOKEN` in the dashboard. `MCP_STATELESS=1` is set by the blueprint.
-4. Client config points at the public URL with the token:
-
-```jsonc
-{
-  "mcp": {
-    "servers": {
-      "graphwright": {
-        "type": "remote",
-        "url": "https://<service>.onrender.com/mcp",
-        "headers": { "Authorization": "Bearer {env:GRAPHWRIGHT_TOKEN}" }
-      }
-    }
-  }
-}
-```
-
-Free-plan caveats worth knowing before you rely on it:
-
-- The service **sleeps after ~15 minutes idle**; the next MCP call pays a cold start
-  (~30-60 s, longer for the first build).
-- AuraDB Free **auto-pauses after 72h of inactivity**, and the two sleep timers are
-  independent — the first request after a quiet week may wait on both.
-- 512 MB RAM, no persistent disk, no shell access to the free instance.
-- **The URL is public.** Without `MCP_AUTH_TOKEN` anyone who finds it has a Cypher
-  shell on your graph. `render.yaml` generates a token for you; copy it from the
-  dashboard into your client config.
-- `/health` is intentionally unauthenticated so Render's health check passes.
-
-The app reads `.env` itself (`python-dotenv`), so the same code runs locally, in
-compose, and on a PaaS with environment variables — no compose needed on the server.
-
-Do not add `NEO4J_PASSWORD` as an environment variable on the **neo4j** service: the
-image maps it to a `server.password` setting that does not exist, and startup fails
-with "Unrecognized setting. No declared setting with name: PASSWORD". The healthcheck
-interpolates `${NEO4J_PASSWORD}` instead.
+The cost: no server-initiated notifications, no elicitation, no stream resumption. For two
+request/response tools that is not a loss; it becomes one the moment you want progress
+bars or confirmation prompts.
 
 ## Example calls
 
@@ -351,10 +174,18 @@ statement, or put both clauses in a single statement as shown above.
 
 ```
 src/graphwright/
-├── server.py          # MCPServer, the two tools, transport selection
+├── server.py          # MCPServer, the two tools, /health and /warm, transport selection
 ├── neo4j_client.py    # driver, READ vs WRITE execution, counters
 └── serialization.py   # nodes/relationships/paths/temporal -> JSON
-scripts/smoke_test.py  # end-to-end check over HTTP
+scripts/
+├── smoke_test.py      # end-to-end check over HTTP
+├── render_deploy.py   # create/deploy the Render service via API
+└── hf_deploy.py       # Hugging Face Space deploy (blocked: Docker Spaces need PRO)
+infra/
+├── warm.js            # Cloudflare Worker keep-warm pinger
+├── wrangler.toml      # cron, Render URL, local hour window
+└── README.md          # pinger runbook
 Dockerfile             # python:3.12-slim + uv, runs the MCP server
-docker-compose.yml     # Neo4j 5.26 + graphwright service
+docker-compose.yml     # graphwright service only (Neo4j is external)
+DEPLOYMENT.md          # Aura + Render + pinger, step by step
 ```
