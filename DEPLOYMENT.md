@@ -165,21 +165,7 @@ clients a 90 s startup timeout:
 "timeout": { "startup": 90000, "catalog": 90000 }
 ```
 
-## 4. Hugging Face Spaces
-
-> **Blocked as of 2026:** free `cpu-basic` covers **static Spaces only**. Creating a
-> Docker or Gradio Space returns `402 Payment Required` ("requires a PRO subscription").
-> The script is kept for when a PRO plan exists.
-
-`scripts/hf_deploy.py` creates `<you>/graphwright` as a Docker Space, uploads the repo
-excluding every `.env`, pushes `NEO4J_*` and `MCP_AUTH_TOKEN` as Space secrets, sets
-`MCP_HOST=0.0.0.0`, `MCP_PORT=7860`, `MCP_STATELESS=1`, writes the Space README with
-`sdk: docker` front matter, and polls until `RUNNING`.
-
-Requires `HF_TOKEN=hf_...` (write token) in `scripts/.env`. HF routes to port **7860**,
-so `MCP_PORT=7860` is required there.
-
-## 5. Client config for the deployed service
+## 4. Client config for the deployed service
 
 Same block as the [client config in README.md](README.md#client-config), with two
 substitutions:
@@ -188,7 +174,7 @@ substitutions:
 - `Authorization` → the Render-generated token, preferably via
   `"Bearer {env:GRAPHWRIGHT_TOKEN}"` so the secret stays out of the file
 
-## 6. Secrets and rotation
+## 5. Secrets and rotation
 
 | Secret | Where it lives | Can it be read back? |
 | --- | --- | --- |
@@ -204,7 +190,7 @@ Rotating the MCP token: Render dashboard → Environment → replace → redeplo
 `wrangler secret put MCP_AUTH_TOKEN` again → update client configs. The two environments
 (local, Render) have independent tokens; rotate only what leaked.
 
-## 7. Troubleshooting
+## 6. Troubleshooting
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
@@ -220,7 +206,7 @@ Worker-specific symptoms (TLS handshake to `*.workers.dev`, 401/503 from the pin
 `/warm` lines in Render's logs) are covered in
 [`infra/README.md`](infra/README.md#troubleshooting).
 
-## 8. Deployment checklist
+## 7. Deployment checklist
 
 - [ ] Aura instance reachable with `.env` values (`verify_connectivity`)
 - [ ] `MCP_AUTH_TOKEN` set on the host (server refuses to start without it)

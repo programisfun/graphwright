@@ -181,7 +181,6 @@ scripts/
 ├── smoke_test.py      # end-to-end check over HTTP
 ├── deploy_common.py   # shared .env and secret helpers for the deploy scripts
 ├── render_deploy.py   # create/deploy the Render service via API
-└── hf_deploy.py       # Hugging Face Space deploy (blocked: Docker Spaces need PRO)
 infra/
 ├── warm.js            # Cloudflare Worker keep-warm pinger
 ├── wrangler.toml      # cron, Render URL, local hour window

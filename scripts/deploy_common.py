@@ -1,6 +1,6 @@
 """Shared helpers for the deploy scripts: env files and secrets.
 
-Both `render_deploy.py` and `hf_deploy.py` need the same three things — read `.env`,
+The deploy scripts need the same three things — read `.env`,
 require a set of keys, and pull a token from an environment variable or a secret file.
 Keeping that here means the lookup order and the error messages exist once.
 """
