@@ -145,17 +145,36 @@ def create_service(owner: str) -> dict:
     return created['service']
 
 
+def unwrap(payload: object, key: str) -> dict | None:
+    """Render returns bare objects on single GETs and {key: item} on list endpoints."""
+    if isinstance(payload, dict):
+        value = payload.get(key, payload)
+        return value if isinstance(value, dict) else None
+    if isinstance(payload, list) and payload:
+        first = payload[0]
+        if isinstance(first, dict):
+            value = first.get(key, first)
+            return value if isinstance(value, dict) else None
+    return None
+
+
 def deploy(service_id: str) -> str:
-    result = call('POST', f'/services/{service_id}/deploys', {'clearCache': 'do_not_clear'})
-    return result['id'] if isinstance(result, dict) else result[0].get('deploy', {}).get('id')
+    created = unwrap(call('POST', f'/services/{service_id}/deploys', {'clearCache': 'do_not_clear'}), 'deploy')
+    if created and created.get('id'):
+        return created['id']
+
+    latest = unwrap(call('GET', f'/services/{service_id}/deploys?limit=1'), 'deploy')
+    if latest and latest.get('id'):
+        return latest['id']
+    sys.exit('Could not determine the deploy id from Render.')
 
 
 def wait_for_deploy(service_id: str, deploy_id: str, timeout_s: int = 900) -> str:
     deadline = time.time() + timeout_s
     last = None
     while time.time() < deadline:
-        deploy = call('GET', f'/services/{service_id}/deploys/{deploy_id}')
-        status = deploy['status']
+        current = unwrap(call('GET', f'/services/{service_id}/deploys/{deploy_id}'), 'deploy')
+        status = (current or {}).get('status', 'unknown')
         if status != last:
             print(f'  deploy status: {status}', flush=True)
             last = status
