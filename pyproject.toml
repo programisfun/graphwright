@@ -1,0 +1,17 @@
+[project]
+name = "graphwright"
+version = "0.1.0"
+description = "MCP server that lets an AI read and edit a Neo4j graph with plain Cypher"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "mcp>=2.3.0",
+    "neo4j>=6.4.1",
+]
+
+[project.scripts]
+graphwright = "graphwright.server:main"
+
+[build-system]
+requires = ["uv_build>=0.13.7,<0.14.0"]
+build-backend = "uv_build"
