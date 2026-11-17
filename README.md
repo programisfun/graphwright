@@ -174,145 +174,19 @@ Invoke-WebRequest "https://graphwright-kjn8.onrender.com/warm" -Headers @{Author
 # {"status":"ok","db_ms":48.9,"row":[{"ok":1}]}
 ```
 
-### Pinger: Cloudflare Worker (free, no card)
+### Pinger: separate repo
 
-Exact steps, in order. Everything below was run on Windows; the same works on macOS/Linux
-with `export` instead of `$env:`.
+The keep-warm worker lives in its own project, because it is a separate deployment with
+its own provider (Cloudflare Workers), credential and schedule:
 
-#### 1. Prerequisites
+**<https://github.com/programisfun/graphwright-warm>** ? `warm.js` + `wrangler.toml` +
+setup runbook.
 
-- A Cloudflare account (free, no card): <https://dash.cloudflare.com/sign-up>
-- Node.js + npm (`node --version`) — `wrangler` runs through `npx`, nothing to install globally
-- The Render service URL and its `MCP_AUTH_TOKEN` (from the Render dashboard, or
-  `GET /v1/services/<id>/env-vars` with your Render API key)
+It calls `GET /warm` every 10 minutes, restricted to 08:00-23:00 local so Render's 750
+monthly instance-hours are not exhausted (15 h/day ~ 450 h; 24/7 would be 730 h).
 
-#### 2. Log in to Cloudflare
-
-```powershell
-cd C:\Users\aron.luk\Desktop\ref\graphwright\infra
-npx wrangler@latest login
-```
-
-A browser opens; click **Allow**. Verify:
-
-```powershell
-npx wrangler@latest whoami
-# 👋 You are logged in with an OAuth Token, associated with the email ...
-```
-
-#### 3. Register the `workers.dev` subdomain (once per account)
-
-`wrangler deploy` fails with *"register a workers.dev subdomain"* on a fresh account, and
-the old onboarding URL now 404s. Register it through the API — replace `<account-id>` with
-the one `whoami` prints:
-
-```powershell
-$acct = "<account-id>"
-$token = (Select-String -Path "$HOME\AppData\Roaming\xdg.config\.wrangler\config\default.toml" -Pattern 'oauth_token\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
-Invoke-RestMethod -Method Put -Uri "https://api.cloudflare.com/client/v4/accounts/$acct/workers/subdomain" `
-  -Headers @{ Authorization = "Bearer $token" } -ContentType "application/json" `
-  -Body '{"subdomain":"aronluk-graphwright"}'
-```
-
-Pick any unique lowercase name. Your worker will appear at
-`https://<worker-name>.<subdomain>.workers.dev`.
-
-#### 4. Point the worker at your service
-
-Edit `infra/wrangler.toml`:
-
-```toml
-[vars]
-WARM_URL = "https://graphwright-kjn8.onrender.com"   # your Render URL, no trailing slash
-TZ_OFFSET_HOURS = "8"    # local hour = UTC + this (8 = UTC+8, -5 = US Eastern)
-START_HOUR = "8"         # only ping between these local hours
-END_HOUR = "23"          # keeps usage near 450 of Render's 750 monthly instance-hours
-```
-
-#### 5. Deploy
-
-```powershell
-npx wrangler@latest deploy --config wrangler.toml
-```
-
-```
-Uploaded graphwright-warm
-Deployed graphwright-warm triggers
-  https://graphwright-warm.<subdomain>.workers.dev
-  schedule: */10 * * * *
-```
-
-#### 6. Store the token as a worker secret
-
-Never put it in `wrangler.toml` (that file is committed). Pipe it in so it never appears
-on screen or in shell history:
-
-```powershell
-$t = (Get-Content ..\.env | Select-String '^MCP_AUTH_TOKEN=').Line.Split('=',2)[1]
-$t.TrimEnd() | npx wrangler@latest secret put MCP_AUTH_TOKEN --config wrangler.toml
-# ✨ Success! Uploaded secret MCP_AUTH_TOKEN
-```
-
-If the Render service generated its own token, use that value instead of the local one —
-the worker must authenticate to **Render**, not to your laptop.
-
-#### 7. Test it
-
-`*.workers.dev` sometimes fails this machine's default TLS negotiation. Force IPv4 +
-TLS 1.2:
-
-```powershell
-curl.exe -4 -s --tlsv1.2 -w "`nHTTP %{http_code}`n" https://graphwright-warm.<subdomain>.workers.dev/
-# {"status":"ok","db_ms":1461.3,"row":[{"ok":1}]}
-# HTTP 200
-```
-
-That single call proves the whole chain: worker → Render → Aura query.
-
-#### 8. Confirm the schedule actually fires
-
-Scheduled events take up to ~10 minutes to start after a deploy, and `wrangler tail`
-does **not** show them reliably. Check Render's logs instead (app logs, not request logs —
-free plans have no request-log type):
-
-```powershell
-$key = (Get-Content ..\scripts\.env | Select-String '^RENDER_API_KEY=').Line.Split('=',2)[1]
-$owner = (Invoke-RestMethod "https://api.render.com/v1/owners?limit=1" -Headers @{Authorization="Bearer $key"})[0].owner.id
-Invoke-RestMethod "https://api.render.com/v1/logs?ownerId=$owner&resource=<service-id>&type=app&limit=100" `
-  -Headers @{Authorization="Bearer $key"} |
-  Select-Object -ExpandProperty logs |
-  Where-Object { $_.message -match '/warm' } |
-  ForEach-Object { "$($_.timestamp) $($_.message)" }
-```
-
-Expect a line roughly every 10 minutes inside your window:
-
-```
-2026-11-17T05:20:58Z  INFO: 10.31.154.133:0 - "GET /warm HTTP/1.1" 200 OK
-```
-
-#### 9. Change or remove it
-
-| Task | Command |
-| --- | --- |
-| Different interval | edit `crons` in `wrangler.toml`, `npx wrangler deploy` |
-| Rotate the token | `npx wrangler secret put MCP_AUTH_TOKEN` again, then update the client |
-| Pause without deleting | `npx wrangler delete --name graphwright-warm` and redeploy to restore |
-| Inspect live logs | `npx wrangler tail graphwright-warm` (requests only) |
-| Check schedule via API | `GET /accounts/<id>/workers/scripts/graphwright-warm/schedules` |
-
-#### Troubleshooting
-
-| Symptom | Cause | Fix |
-| --- | --- | --- |
-| `SSLV3_ALERT_HANDSHAKE_FAILURE` | local TLS/IPv6 stack, not Cloudflare | `curl -4 --tlsv1.2` |
-| `Could not automatically register "infra"` | no `workers.dev` subdomain | step 3 |
-| Worker returns 401 | wrong/absent secret | step 6, use the Render token |
-| 503 from `/warm` | Aura unreachable or auth broken | check Render env vars; the response body carries the Neo4j error |
-| No `/warm` lines in Render logs | schedule still propagating, or outside the hour window | wait 10 min; check `TZ_OFFSET_HOURS` |
-
-Without a pinger the first call after idle still works — it just takes ~60 s while
-Render wakes, which is why the client timeouts should be raised to 90 s.
+Without any pinger the service still works ? the first call after idle just takes ~60 s
+while Render wakes, which is why client timeouts should be raised to 90 s.
 
 ## Deploying to Hugging Face Spaces
 
