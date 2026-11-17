@@ -12,6 +12,30 @@ Everything below assumes the repo is pushed and `.env` holds the Aura credential
 app reads `.env` itself with `python-dotenv`, so the same code runs locally, in compose,
 and on a PaaS — no compose needed on the server.
 
+## Order of operations
+
+Do these in order — each step produces a value the next one needs.
+
+| # | Step | Produces | Consumed by |
+| --- | --- | --- | --- |
+| 1 | Create the AuraDB instance → [§1](#1-neo4j-auradb-free) | URI, user, password, database → `.env` | deploy, local runs |
+| 2 | Create the Render account **and add a payment method** → [§2](#2-render-free-web-service) | workspace + API key → `scripts/.env` | the deploy script |
+| 3 | Run `scripts/render_deploy.py` → [§2](#2-render-free-web-service) | service URL + Render-generated `MCP_AUTH_TOKEN` | pinger, client |
+| 4 | Deploy the pinger → [§3](#3-keep-warm-pinger) | worker URL + cron | — |
+| 5 | Point the client at the service → [§5](#5-client-config-for-the-deployed-service) | working `graphwright_read` / `graphwright_edit` | you |
+
+Two prerequisites that are easy to get wrong:
+
+- **The payment method is required before step 3**, not optional. Render rejects
+  service creation through the API with `402 Payment information is required` even on the
+  free plan. The card is verified, not charged, while you stay on Free.
+- **The pinger cannot be set up before step 3**, because its secret is the token Render
+  generates for that service. Deploy first, then copy the token.
+
+Verification checkpoints, one per step: `.env` connects to Aura; `GET /owners` returns a
+workspace; `/health` returns 200; a `/warm` line appears in Render's logs; the client
+lists two tools.
+
 ## 1. Neo4j AuraDB Free
 
 Create an instance at <https://console.neo4j.io> and copy the three connection facts:
@@ -35,6 +59,10 @@ Limits: no backups, single zone, no vector optimisation, deleted after ~30 days 
 
 Render does not support `docker-compose.yml` at any tier — it builds the `Dockerfile`. So
 Neo4j cannot live in the same deployment.
+
+**Add a payment method first** (<https://dashboard.render.com/billing>). On the free plan
+it is verification, not a charge — but without it, API service creation fails with `402`.
+The dashboard usually refuses to create a service without one as well.
 
 ### Via the API
 
