@@ -91,34 +91,35 @@ uv run python scripts/smoke_test.py
     "servers": {
       "graphwright": {
         "type": "remote",
-        "url": "http://127.0.0.1:8000/mcp"
+        "url": "http://127.0.0.1:8000/mcp",
+        "headers": { "Authorization": "Bearer <MCP_AUTH_TOKEN>" }
       }
     }
   }
 }
 ```
 
-Tools then appear as `graphwright_read` and `graphwright_edit`.
+Tools then appear as `graphwright_read` and `graphwright_edit`. The header is not
+optional once `MCP_AUTH_TOKEN` is set — without it every call returns 401.
 
 ## Configuration
 
-Settings come from `.env` (gitignored; copy `.env.example`). Compose reads it twice:
-for `${NEO4J_PASSWORD}` substitution and as the container's `env_file` (optional —
-without it the built-in defaults apply). The container overrides `NEO4J_URI` to
-`bolt://neo4j:7687`, because inside the compose network the host `localhost` would be
-the container itself. `NEO4J_USER` and `NEO4J_DATABASE` are passed through.
+Settings come from `.env` (gitignored; copy `.env.example`). The app loads it with
+`python-dotenv`, so the same file works for `uv run graphwright` and for the container
+(compose passes it as `env_file`). Neo4j is external (AuraDB); the URI in `.env` is used
+verbatim inside and outside the container.
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `NEO4J_URI` | `bolt://localhost:7687` | host-side value; use `neo4j+s://...` for AuraDB |
-| `NEO4J_USER` | `neo4j` | |
-| `NEO4J_PASSWORD` | `graphwright` | also sets `NEO4J_AUTH` for the Neo4j container |
-| `NEO4J_DATABASE` | `neo4j` | |
+| `NEO4J_URI` | `bolt://localhost:7687` | use `neo4j+s://...` for AuraDB |
+| `NEO4J_USER` | `neo4j` | Aura instances often use the instance id |
+| `NEO4J_PASSWORD` | — | Aura password |
+| `NEO4J_DATABASE` | `neo4j` | Aura instances often name it after the instance id |
 | `MCP_TRANSPORT` | `streamable-http` | or `stdio` |
 | `MCP_HOST` | `127.0.0.1` | `0.0.0.0` inside the container, or when `PORT` is set |
 | `MCP_PORT` | `8000` | falls back to `PORT` (PaaS convention) if unset |
-| `MCP_AUTH_TOKEN` | unset | admin token: when set, every request needs `Authorization: Bearer <token>` and all tools are allowed; `/health` stays public |
-| `MCP_ALLOW_INSECURE` | unset | `1` lets the server bind a non-loopback host **without** a token. Used by compose, whose published port is loopback-only |
+| `MCP_AUTH_TOKEN` | unset | admin token; when set, every request needs `Authorization: Bearer <token>` and all tools are allowed |
+| `MCP_ALLOW_INSECURE` | unset | `1` allows a non-loopback bind **without** a token; escape hatch only |
 
 ### Authentication model
 
@@ -126,6 +127,8 @@ One role only: **admin**. A single shared token (`MCP_AUTH_TOKEN`) grants every 
 including `edit` and therefore `DETACH DELETE`. There are no scopes, no per-user
 identity and no audit trail.
 
+- **Enforced locally too.** The token is set in `.env`, so the container requires it;
+  clients send the header (see the client config above).
 - Compared with `hmac.compare_digest` (constant time).
 - `/health` is exempt so platform health checks work.
 - If the token is unset, the server refuses to bind anything but loopback unless
@@ -133,6 +136,8 @@ identity and no audit trail.
   the one failure mode worth a hard stop.
 - Tokens shorter than 16 characters only produce a warning; generate one with
   `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+- Rotating the token = edit `.env`, `docker compose up -d --force-recreate graphwright`,
+  and update every client config.
 
 `MCP_PORT` takes precedence over `PORT`, so **do not set `MCP_PORT` on a PaaS** — the
 platform routes traffic to `PORT`.
