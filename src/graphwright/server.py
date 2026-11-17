@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 import os
+import time
 from typing import Any
 
 from dotenv import load_dotenv
@@ -116,6 +117,30 @@ async def edit(
 async def health(_: Request) -> JSONResponse:
     """Liveness probe for Docker/Render. Never requires the bearer token."""
     return JSONResponse({'status': 'ok'})
+
+
+@server.custom_route('/warm', methods=['GET'])
+async def warm(_: Request) -> JSONResponse:
+    """Keep-warm probe: runs a trivial query so Neo4j does not auto-pause.
+
+    Requires the bearer token (unlike /health) because it touches the database.
+    The request itself also counts as inbound traffic for scale-to-zero hosts.
+    """
+    client = await get_client()
+    started = time.perf_counter()
+    try:
+        result = await client.read('RETURN 1 AS ok')
+    except Neo4jError as error:
+        return JSONResponse(
+            {'status': 'error', 'error': str(error)[:200]}, status_code=503
+        )
+    return JSONResponse(
+        {
+            'status': 'ok',
+            'db_ms': round((time.perf_counter() - started) * 1000, 1),
+            'row': result['rows'],
+        }
+    )
 
 
 class BearerTokenMiddleware:

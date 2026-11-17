@@ -149,6 +149,50 @@ identity and no audit trail.
 `MCP_PORT` takes precedence over `PORT`, so **do not set `MCP_PORT` on a PaaS** — the
 platform routes traffic to `PORT`.
 
+## Keeping it warm
+
+Two independent idle timers will otherwise bite you:
+
+| Host | Idle limit | What resets it |
+| --- | --- | --- |
+| Render free | 15 min | any inbound HTTP request |
+| AuraDB Free | 72 h | an actual **query** (`/health` does not touch the DB) |
+
+So the server exposes two probes:
+
+| Endpoint | Auth | Does | Use |
+| --- | --- | --- | --- |
+| `/health` | none | nothing — returns `{"status":"ok"}` | platform health checks |
+| `/warm` | bearer token | runs `RETURN 1`, returns `db_ms` | keep-warm pinger |
+
+One `/warm` call satisfies both timers: it is inbound traffic for Render *and* a query
+for Aura.
+
+```powershell
+$t = (Get-Content .env | Select-String '^MCP_AUTH_TOKEN=').Line.Split('=',2)[1]
+Invoke-WebRequest "https://graphwright-kjn8.onrender.com/warm" -Headers @{Authorization="Bearer $t"}
+# {"status":"ok","db_ms":48.9,"row":[{"ok":1}]}
+```
+
+### Pinger: Cloudflare Worker (free, no card)
+
+`infra/warm.js` + `infra/wrangler.toml`, cron every 10 minutes, restricted to a local
+time window so Render's 750 monthly instance-hours are not exhausted (15 h/day ≈ 450 h;
+24/7 would be 730 h and leave almost no headroom).
+
+```powershell
+cd infra
+npx wrangler login
+npx wrangler secret put MCP_AUTH_TOKEN     # paste the same token
+npx wrangler deploy
+```
+
+Adjust `TZ_OFFSET_HOURS` / `START_HOUR` / `END_HOUR` in `wrangler.toml` for your time
+zone. Manual test: open the worker URL, it proxies one `/warm` call.
+
+Without a pinger the first call after idle still works — it just takes ~60 s while
+Render wakes, which is why the client timeouts should be raised to 90 s.
+
 ## Deploying to Hugging Face Spaces
 
 > **Blocked as of 2026:** free `cpu-basic` now covers **static Spaces only** — creating a
