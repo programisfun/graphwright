@@ -27,15 +27,33 @@ REGION = os.getenv('RENDER_REGION', 'oregon')
 
 
 def api_key() -> str:
+    """RENDER_API_KEY from env, scripts/.env.deploy, or ~/.render-api-key."""
     key = os.getenv('RENDER_API_KEY')
     if key:
         return key.strip()
-    path = pathlib.Path.home() / '.render-api-key'
-    if path.exists():
-        return path.read_text(encoding='utf-8').strip()
+
+    candidates = [
+        pathlib.Path(__file__).parent / '.env.deploy',   # next to this script
+        pathlib.Path.home() / '.render-api-key',         # outside the repo
+    ]
+    for path in candidates:
+        if not path.exists():
+            continue
+        text = path.read_text(encoding='utf-8')
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith('RENDER_API_KEY='):
+                value = line.split('=', 1)[1].strip().strip('"').strip("'")
+                if value:
+                    return value
+        if path.name == '.render-api-key' and text.strip():
+            return text.strip()
+
     sys.exit(
         'No API key. Create one at https://dashboard.render.com/u/settings#api-keys '
-        'then save it to ~/.render-api-key (or set RENDER_API_KEY).'
+        'then either:\n'
+        '  echo "RENDER_API_KEY=rnd_..." > scripts/.env.deploy\n'
+        '  or set RENDER_API_KEY'
     )
 
 

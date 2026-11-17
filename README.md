@@ -163,12 +163,16 @@ Neo4j cannot live in the same deployment. Pair it with **Neo4j AuraDB Free**:
 
 ```powershell
 # 1. Create an API key: https://dashboard.render.com/u/settings#api-keys
-# 2. Save it where the script can read it (never commit it)
-Set-Content "$HOME\.render-api-key" "rnd_..." -NoNewline
+# 2. Save it next to the script (gitignored), or in $HOME\.render-api-key
+Set-Content scripts\.env.deploy "RENDER_API_KEY=rnd_..." -NoNewline
 
 # 3. Create the service and deploy
 uv run python scripts/render_deploy.py
 ```
+
+Key lookup order: `RENDER_API_KEY` env var → `scripts/.env.deploy` → `~/.render-api-key`.
+Keep it out of `.env`: that file holds app config you may copy to a host, while a Render
+key can create or delete every service in the account.
 
 The script reads `NEO4J_*` from `.env`, lets Render generate `MCP_AUTH_TOKEN`, creates
 the service if it does not exist (`plan: free`, `region: oregon`, health check
