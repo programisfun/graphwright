@@ -174,6 +174,10 @@ Key lookup order: `RENDER_API_KEY` env var → `scripts/.env.deploy` → `~/.ren
 Keep it out of `.env`: that file holds app config you may copy to a host, while a Render
 key can create or delete every service in the account.
 
+**Known limitation:** Render rejects service creation through the API with
+`402 Payment information is required`, even on the free plan. Create the service once in
+the dashboard, then use this script for redeploys (deploying an existing service works).
+
 The script reads `NEO4J_*` from `.env`, lets Render generate `MCP_AUTH_TOKEN`, creates
 the service if it does not exist (`plan: free`, `region: oregon`, health check
 `/health`), triggers a deploy, and polls until it goes live. `--status` prints the

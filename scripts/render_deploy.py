@@ -81,6 +81,14 @@ def call(method: str, path: str, body: dict | None = None) -> object:
             return json.loads(raw) if raw else None
     except urllib.error.HTTPError as error:
         detail = error.read().decode(errors='replace')
+        if error.code == 402:
+            sys.exit(
+                'Render requires payment information for services created via the API, '
+                'even on the free plan. Create the service once in the dashboard '
+                '(New > Web Service > Public Git repository), then this script can '
+                'redeploy it. Details: https://dashboard.render.com/billing\n'
+                f'API said: {detail[:300]}'
+            )
         sys.exit(f'{method} {path} -> HTTP {error.code}: {detail[:600]}')
 
 
