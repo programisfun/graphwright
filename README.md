@@ -51,14 +51,14 @@ naturally to a model.
 ## Run
 
 ```powershell
-docker compose up -d          # Neo4j + graphwright, both loopback-only
+docker compose up -d          # graphwright only; Neo4j is external (AuraDB)
 uv run python scripts/smoke_test.py
 ```
 
 | Service | Address | Notes |
 | --- | --- | --- |
 | `graphwright-mcp` | <http://127.0.0.1:8000/mcp> | MCP over Streamable HTTP, `restart: unless-stopped` |
-| `graphwright-neo4j` | 7474 (UI), 7687 (bolt) | `neo4j` / `graphwright` |
+| Neo4j | from `NEO4J_URI` | AuraDB Free (`neo4j+s://...`), or a local instance you run yourself |
 
 For development, run the server from source instead of the container:
 
@@ -69,8 +69,13 @@ $env:MCP_TRANSPORT='stdio'; uv run graphwright    # stdio instead of HTTP
 docker compose build graphwright && docker compose up -d   # rebuild after code changes
 ```
 
-The password is written twice in `docker-compose.yml` (`NEO4J_AUTH` and the
-service's `NEO4J_PASSWORD`); change both together.
+Neo4j is no longer a service in `docker-compose.yml`, because one `.env` cannot hold
+both the local container password and the Aura credentials. Restore the bundled
+service from git history if you want it back:
+
+```powershell
+git show 702e1a8:docker-compose.yml    # the version with the neo4j service
+```
 
 Smoke test (expects the HTTP server running):
 
