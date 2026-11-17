@@ -30,15 +30,23 @@ type**, and to reuse the existing names (`Person` not `People`, `WORKS_AT` not
 property vocabulary before writing:
 
 ```cypher
-MATCH (n:Person) UNWIND keys(n) AS k RETURN k, count(*) AS nodes ORDER BY nodes DESC
-MATCH (n:Person) RETURN n LIMIT 25
+MATCH (n:Person) UNWIND keys(n) AS k
+RETURN k, count(*) AS nodes, collect(DISTINCT valueType(n[k])) AS types
+ORDER BY nodes DESC
 ```
 
-…and to match property names, casing and value types — so one label does not
-accumulate `createdAt`, `created_at` and `created`. This is guidance only — nothing
-blocks a duplicate label. If drift matters, check `read("CALL db.labels()")`
-yourself, or add a label whitelist. Relationship types drift more than labels in
-practice, because both spellings read naturally to a model.
+```
+k            nodes  types
+created_at   3      ["DATE NOT NULL", "STRING NOT NULL"]
+score        2      ["INTEGER NOT NULL", "FLOAT NOT NULL"]
+```
+
+Names and types in one query — so one label does not accumulate `createdAt` /
+`created_at`, nor a Date next to a String. A second `MATCH (n:Person) RETURN n LIMIT 25`
+shows representative values. This is guidance only — nothing blocks a duplicate label.
+If drift matters, check `read("CALL db.labels()")` yourself, or add a label whitelist.
+Relationship types drift more than labels in practice, because both spellings read
+naturally to a model.
 
 ## Run
 

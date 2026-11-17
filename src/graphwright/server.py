@@ -81,8 +81,9 @@ async def read(
         'read("CALL db.relationshipTypes()"), then reuse those exact names '
         '(Person not People; WORKS_AT not EMPLOYED_BY). When you create a node with a '
         'label that already exists, inspect that label before writing: '
-        'read("MATCH (n:Person) UNWIND keys(n) AS k RETURN k, count(*) AS nodes '
-        'ORDER BY nodes DESC") gives the property vocabulary across all nodes, and '
+        'read("MATCH (n:Person) UNWIND keys(n) AS k RETURN k, count(*) AS nodes, '
+        'collect(DISTINCT valueType(n[k])) AS types ORDER BY nodes DESC") gives every '
+        'property name with its value types across all nodes, and '
         'read("MATCH (n:Person) RETURN n LIMIT 25") shows representative values. '
         'Follow the same property names, casing and value types.'
     )
