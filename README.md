@@ -174,18 +174,34 @@ Invoke-WebRequest "https://graphwright-kjn8.onrender.com/warm" -Headers @{Author
 # {"status":"ok","db_ms":48.9,"row":[{"ok":1}]}
 ```
 
-### Pinger: separate repo
+### Pinger: `infra/`
 
-The keep-warm worker lives in its own project, because it is a separate deployment with
-its own provider (Cloudflare Workers), credential and schedule:
+The keep-warm worker lives in this repo under `infra/`:
 
-**<https://github.com/programisfun/graphwright-warm>** ? `warm.js` + `wrangler.toml` +
-setup runbook.
+```
+infra/
+├── warm.js          Cloudflare Worker: cron -> GET /warm
+├── wrangler.toml    schedule, Render URL, local hour window
+└── README.md        step-by-step setup (login, subdomain, secret, verify)
+```
 
 It calls `GET /warm` every 10 minutes, restricted to 08:00-23:00 local so Render's 750
-monthly instance-hours are not exhausted (15 h/day ~ 450 h; 24/7 would be 730 h).
+monthly instance-hours are not exhausted (15 h/day ~ 450 h; 24/7 would be 730 h). It sits
+in a subfolder because it is a separate deployment: different provider (Cloudflare),
+credential (`wrangler secret`) and command (`wrangler deploy`).
 
-Without any pinger the service still works ? the first call after idle just takes ~60 s
+Quick start:
+
+```powershell
+cd infra
+npx wrangler@latest login
+npx wrangler@latest secret put MCP_AUTH_TOKEN   # the token Render uses
+npx wrangler@latest deploy --config wrangler.toml
+```
+
+Full runbook, verification and troubleshooting: [`infra/README.md`](infra/README.md).
+
+Without any pinger the service still works: the first call after idle just takes ~60 s
 while Render wakes, which is why client timeouts should be raised to 90 s.
 
 ## Deploying to Hugging Face Spaces
