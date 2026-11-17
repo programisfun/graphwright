@@ -45,8 +45,13 @@ def api_key() -> str:
             line = line.strip()
             if line.startswith('RENDER_API_KEY='):
                 value = line.split('=', 1)[1].strip().strip('"').strip("'")
-                if value:
+                if value and 'your_key_here' not in value:
                     return value
+                if value:
+                    sys.exit(
+                        f'{path} still contains the placeholder. Paste your real key from '
+                        'https://dashboard.render.com/u/settings#api-keys'
+                    )
         if path.name == '.render-api-key' and text.strip():
             return text.strip()
 
