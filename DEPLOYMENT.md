@@ -102,7 +102,7 @@ owner first.
 | Region | Oregon (free tiers: Oregon, Ohio, Frankfurt, Singapore) |
 | Instance type | **Free** |
 | Health check | `/health` |
-| Auto-deploy | on commit |
+| Auto-deploy | on commit *(only with Render's GitHub App connected — see below)* |
 
 Environment variables: the four `NEO4J_*` values from the
 [configuration table](README.md#configuration), plus:
@@ -114,6 +114,19 @@ Environment variables: the four `NEO4J_*` values from the
 
 **Never set `MCP_PORT` on a PaaS** — the platform injects `PORT` and routes to it;
 `MCP_PORT` takes precedence and would break the health check.
+
+### Auto-deploy: only with the GitHub App
+
+`autoDeployTrigger: commit` is a setting, not a guarantee. A service created from a
+**public Git URL** has no webhook, so pushing does nothing — the deploy has to be started:
+
+```powershell
+uv run python scripts/render_deploy.py
+```
+
+To get push-to-deploy, install Render's GitHub App on the repo owner and reconnect the
+service, after which the webhook drives builds. Until then, treat every push as "code in
+the repo, not yet live".
 
 ### Verify the deployment
 
