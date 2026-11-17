@@ -1,0 +1,23 @@
+# Render blueprint: graphwright MCP server (free plan has no docker-compose support).
+#
+# 1. Point NEO4J_URI/NEO4J_PASSWORD at a Neo4j AuraDB Free instance.
+# 2. Apply this blueprint, then copy the generated MCP_AUTH_TOKEN from the dashboard.
+# Do NOT set MCP_PORT here: Render provides PORT and graphwright uses it.
+services:
+  - type: web
+    name: graphwright
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NEO4J_URI
+        sync: false          # e.g. neo4j+s://<id>.databases.neo4j.io
+      - key: NEO4J_USER
+        value: neo4j
+      - key: NEO4J_PASSWORD
+        sync: false
+      - key: NEO4J_DATABASE
+        value: neo4j
+      - key: MCP_AUTH_TOKEN
+        generateValue: true  # every request needs Authorization: Bearer <token>

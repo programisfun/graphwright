@@ -110,8 +110,56 @@ the container itself. `NEO4J_USER` and `NEO4J_DATABASE` are passed through.
 | `NEO4J_PASSWORD` | `graphwright` | also sets `NEO4J_AUTH` for the Neo4j container |
 | `NEO4J_DATABASE` | `neo4j` | |
 | `MCP_TRANSPORT` | `streamable-http` | or `stdio` |
-| `MCP_HOST` | `127.0.0.1` | `0.0.0.0` inside the container |
-| `MCP_PORT` | `8000` | |
+| `MCP_HOST` | `127.0.0.1` | `0.0.0.0` inside the container, or when `PORT` is set |
+| `MCP_PORT` | `8000` | falls back to `PORT` (PaaS convention) if unset |
+| `MCP_AUTH_TOKEN` | unset | when set, every request needs `Authorization: Bearer <token>`; `/health` stays public |
+
+`MCP_PORT` takes precedence over `PORT`, so **do not set `MCP_PORT` on a PaaS** — the
+platform routes traffic to `PORT`.
+
+## Deploying to Render (free plan)
+
+Render does not support `docker-compose.yml` — it builds the `Dockerfile` instead, so
+Neo4j cannot live in the same deployment. Pair it with **Neo4j AuraDB Free**:
+
+| | Where |
+| --- | --- |
+| Neo4j | AuraDB Free (200k nodes / 400k relationships, auto-pauses after 72h idle) |
+| graphwright | Render free web service, built from `Dockerfile` |
+
+1. Create an AuraDB Free instance, note the `neo4j+s://...` URI and password.
+2. Push this repo, then apply `render.yaml` (Blueprint) or create a Docker web service.
+3. Set `NEO4J_URI`, `NEO4J_PASSWORD`, and a strong `MCP_AUTH_TOKEN` in the dashboard.
+4. Client config points at the public URL with the token:
+
+```jsonc
+{
+  "mcp": {
+    "servers": {
+      "graphwright": {
+        "type": "remote",
+        "url": "https://<service>.onrender.com/mcp",
+        "headers": { "Authorization": "Bearer {env:GRAPHWRIGHT_TOKEN}" }
+      }
+    }
+  }
+}
+```
+
+Free-plan caveats worth knowing before you rely on it:
+
+- The service **sleeps after ~15 minutes idle**; the next MCP call pays a cold start
+  (~30-60 s, longer for the first build).
+- AuraDB Free **auto-pauses after 72h of inactivity**, and the two sleep timers are
+  independent — the first request after a quiet week may wait on both.
+- 512 MB RAM, no persistent disk, no shell access to the free instance.
+- **The URL is public.** Without `MCP_AUTH_TOKEN` anyone who finds it has a Cypher
+  shell on your graph. `render.yaml` generates a token for you; copy it from the
+  dashboard into your client config.
+- `/health` is intentionally unauthenticated so Render's health check passes.
+
+The app reads `.env` itself (`python-dotenv`), so the same code runs locally, in
+compose, and on a PaaS with environment variables — no compose needed on the server.
 
 Do not add `NEO4J_PASSWORD` as an environment variable on the **neo4j** service: the
 image maps it to a `server.password` setting that does not exist, and startup fails

@@ -4,23 +4,35 @@ Two tools only:
     read(cypher, params, max_rows)  -> READ access mode; the server rejects writes
     edit(cypher, params)            -> WRITE access mode; any Cypher, destructive allowed
 
-There is no authentication and no query inspection. The client (an LLM) is trusted
-to run whatever it sends, including DETACH DELETE and DROP INDEX. Bind to loopback
-only, or put a real auth layer in front.
+There is no authentication and no query inspection unless MCP_AUTH_TOKEN is set, in
+which case every request must carry `Authorization: Bearer <token>`. The client (an
+LLM) is trusted to run whatever it sends, including DETACH DELETE and DROP INDEX.
+Bind to loopback, or set MCP_AUTH_TOKEN before exposing this to a network.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hmac
 import os
 from typing import Any
 
+from dotenv import load_dotenv
+
+# Read .env for local runs and docker-compose. On a PaaS (Render, Fly, ...) the
+# variables come from the dashboard instead and this is a no-op.
+load_dotenv()
+
 from mcp.server.mcpserver import MCPServer
 from neo4j.exceptions import Neo4jError
+from starlette.datastructures import Headers
+from starlette.requests import Request
+from starlette.responses import JSONResponse, PlainTextResponse
 
 from .neo4j_client import GraphClient
 
 DEFAULT_MAX_ROWS = 500
+PUBLIC_PATHS = frozenset({'/health'})
 
 server = MCPServer(
     name='graphwright',
@@ -100,16 +112,64 @@ async def edit(
         return {'error': str(error), 'code': getattr(error, 'code', None)}
 
 
+@server.custom_route('/health', methods=['GET'])
+async def health(_: Request) -> JSONResponse:
+    """Liveness probe for Docker/Render. Never requires the bearer token."""
+    return JSONResponse({'status': 'ok'})
+
+
+class BearerTokenMiddleware:
+    """Reject HTTP requests that do not carry the configured bearer token."""
+
+    def __init__(self, app: Any, token: str) -> None:
+        self.app = app
+        self.token = token
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope['type'] != 'http' or scope.get('path') in PUBLIC_PATHS:
+            await self.app(scope, receive, send)
+            return
+
+        supplied = Headers(scope=scope).get('authorization', '')
+        if not hmac.compare_digest(supplied, f'Bearer {self.token}'):
+            response = PlainTextResponse('Unauthorized', status_code=401)
+            await response(scope, receive, send)
+            return
+
+        await self.app(scope, receive, send)
+
+
+def bind_address() -> tuple[str, int]:
+    """MCP_PORT/MCP_HOST, or the PORT convention used by PaaS platforms."""
+    paas_port = os.getenv('PORT')
+    port = int(os.getenv('MCP_PORT') or paas_port or '8000')
+    host = os.getenv('MCP_HOST') or ('0.0.0.0' if paas_port else '127.0.0.1')
+    return host, port
+
+
+def build_app() -> Any:
+    host, _ = bind_address()
+    app: Any = server.streamable_http_app(host=host)
+
+    token = os.getenv('MCP_AUTH_TOKEN')
+    if token:
+        app = BearerTokenMiddleware(app, token)
+    return app
+
+
 def main() -> None:
     transport = os.getenv('MCP_TRANSPORT', 'streamable-http')
     if transport == 'stdio':
         server.run('stdio')
-    else:
-        server.run(
-            'streamable-http',
-            host=os.getenv('MCP_HOST', '127.0.0.1'),
-            port=int(os.getenv('MCP_PORT', '8000')),
-        )
+        return
+
+    import uvicorn
+
+    host, port = bind_address()
+    app = build_app()
+    auth = 'bearer token' if os.getenv('MCP_AUTH_TOKEN') else 'NO AUTH'
+    print(f'graphwright: http://{host}:{port}/mcp ({auth})', flush=True)
+    uvicorn.run(app, host=host, port=port)
 
 
 if __name__ == '__main__':
