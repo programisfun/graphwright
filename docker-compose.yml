@@ -11,6 +11,10 @@ services:
     environment:
       MCP_HOST: 0.0.0.0              # container-internal; the published port stays loopback
       MCP_PORT: 8000
+      # No MCP_AUTH_TOKEN locally and the port is published on 127.0.0.1 only, so the
+      # server may bind 0.0.0.0 inside the container. On a PaaS, set MCP_AUTH_TOKEN
+      # instead (render.yaml generates one) and drop this.
+      MCP_ALLOW_INSECURE: "1"
     ports:
       - "127.0.0.1:8000:8000"   # loopback only: this server has no auth unless MCP_AUTH_TOKEN is set
     restart: unless-stopped

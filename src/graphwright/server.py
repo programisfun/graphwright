@@ -147,11 +147,47 @@ def bind_address() -> tuple[str, int]:
     return host, port
 
 
-def build_app() -> Any:
-    host, _ = bind_address()
-    app: Any = server.streamable_http_app(host=host)
+def check_exposure(host: str, port: int, token: str | None) -> None:
+    """Refuse to expose an unauthenticated shell on a non-loopback address.
 
+    Admin-only model: one token grants every tool, including destructive ones. If no
+    token is configured, the server must not be reachable from outside this machine.
+    MCP_ALLOW_INSECURE=1 opts out (e.g. a container whose published port is bound to
+    127.0.0.1 by docker-compose).
+    """
+    if token:
+        if len(token) < 16:
+            print(
+                f'graphwright: warning: MCP_AUTH_TOKEN is only {len(token)} chars; '
+                'generate one with: python -c "import secrets;'
+                ' print(secrets.token_urlsafe(32))"',
+                flush=True,
+            )
+        return
+
+    if host in ('127.0.0.1', 'localhost', '::1'):
+        return
+    if os.getenv('MCP_ALLOW_INSECURE') == '1':
+        print(
+            f'graphwright: warning: no MCP_AUTH_TOKEN, listening on {host}:{port}; '
+            'MCP_ALLOW_INSECURE=1 is set',
+            flush=True,
+        )
+        return
+
+    raise SystemExit(
+        f'graphwright: refusing to listen on {host}:{port} without MCP_AUTH_TOKEN. '
+        'Anyone reaching this port could run arbitrary Cypher. Set MCP_AUTH_TOKEN, '
+        'or MCP_ALLOW_INSECURE=1 only if the port is not publicly reachable.'
+    )
+
+
+def build_app() -> Any:
+    host, port = bind_address()
     token = os.getenv('MCP_AUTH_TOKEN')
+    check_exposure(host, port, token)
+
+    app: Any = server.streamable_http_app(host=host)
     if token:
         app = BearerTokenMiddleware(app, token)
     return app

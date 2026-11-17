@@ -117,7 +117,22 @@ the container itself. `NEO4J_USER` and `NEO4J_DATABASE` are passed through.
 | `MCP_TRANSPORT` | `streamable-http` | or `stdio` |
 | `MCP_HOST` | `127.0.0.1` | `0.0.0.0` inside the container, or when `PORT` is set |
 | `MCP_PORT` | `8000` | falls back to `PORT` (PaaS convention) if unset |
-| `MCP_AUTH_TOKEN` | unset | when set, every request needs `Authorization: Bearer <token>`; `/health` stays public |
+| `MCP_AUTH_TOKEN` | unset | admin token: when set, every request needs `Authorization: Bearer <token>` and all tools are allowed; `/health` stays public |
+| `MCP_ALLOW_INSECURE` | unset | `1` lets the server bind a non-loopback host **without** a token. Used by compose, whose published port is loopback-only |
+
+### Authentication model
+
+One role only: **admin**. A single shared token (`MCP_AUTH_TOKEN`) grants every tool,
+including `edit` and therefore `DETACH DELETE`. There are no scopes, no per-user
+identity and no audit trail.
+
+- Compared with `hmac.compare_digest` (constant time).
+- `/health` is exempt so platform health checks work.
+- If the token is unset, the server refuses to bind anything but loopback unless
+  `MCP_ALLOW_INSECURE=1` is set — an unauthenticated Cypher shell on a public port is
+  the one failure mode worth a hard stop.
+- Tokens shorter than 16 characters only produce a warning; generate one with
+  `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
 
 `MCP_PORT` takes precedence over `PORT`, so **do not set `MCP_PORT` on a PaaS** — the
 platform routes traffic to `PORT`.
