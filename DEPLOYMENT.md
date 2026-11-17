@@ -143,45 +143,23 @@ log type**, and `limit=100` only spans ~15 minutes because the health check logs
 
 ## 3. Keep-warm pinger
 
-Two independent idle timers, with different reset conditions:
+Two independent idle timers would otherwise end the service's usable life:
 
-| Host | Idle limit | What resets it |
+| Host | Idle limit | Reset by |
 | --- | --- | --- |
 | Render free | 15 min | any inbound HTTP request |
 | AuraDB Free | 72 h | an actual **query** (`/health` does not touch the DB) |
 
-The server exposes two probes:
+`/warm` (bearer token) runs `RETURN 1`, so a single call resets both. `/health` stays
+DB-free so platform health checks are cheap.
 
-| Endpoint | Auth | Does | Use |
-| --- | --- | --- | --- |
-| `/health` | none | returns `{"status":"ok"}` | platform health checks |
-| `/warm` | bearer token | runs `RETURN 1`, returns `db_ms` | keep-warm pinger |
-
-One `/warm` call satisfies both. The pinger is a Cloudflare Worker in `infra/`; it runs
-every 10 minutes but only between 08:00 and 23:00 local, because 24/7 would consume ~730
-of Render's 750 monthly instance-hours and leave no headroom.
-
-```powershell
-cd infra
-npx wrangler@latest login
-npx wrangler@latest secret put MCP_AUTH_TOKEN   # the token Render uses, not the local one
-npx wrangler@latest deploy --config wrangler.toml
-```
-
-Full runbook (subdomain registration, verification, troubleshooting):
+The worker that calls it lives in `infra/`: a Cloudflare Worker on a 10-minute cron,
+restricted to 08:00-23:00 local, because 24/7 would consume ~730 of Render's 750 monthly
+instance-hours. Setup, verification and troubleshooting are documented **once**, in
 [`infra/README.md`](infra/README.md).
 
-Verification paths, cheapest first:
-
-1. Dashboard → Worker → **Settings → Trigger Events** → last 100 cron runs.
-2. Render logs filtered `text=/warm` → `200 OK` every ~10 min inside the window.
-3. `curl -4 --tlsv1.2 https://<worker>/` → proxies one `/warm` immediately.
-
-Schedule changes take up to 15 minutes to propagate; silence right after a deploy is
-normal. Cron runs in **UTC**, which is why the worker computes the local hour itself.
-
-Without a pinger everything still works — the first call after idle just takes ~60 s.
-Raise client timeouts to 90 s in that case:
+Without a pinger the service still works: the first call after idle takes ~60 s, so give
+clients a 90 s startup timeout:
 
 ```jsonc
 "timeout": { "startup": 90000, "catalog": 90000 }

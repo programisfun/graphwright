@@ -1,8 +1,12 @@
 ﻿# graphwright-warm
 
 Keep-warm pinger for the [graphwright](https://github.com/programisfun/graphwright) MCP
-service. Lives in its own repo because it is a separate deployment with its own
+service. Lives in its own subfolder because it is a separate deployment with its own
 credential, schedule and hosting provider (Cloudflare Workers, not Render).
+
+Full deployment order (Aura → Render → pinger → client):
+[`../DEPLOYMENT.md`](../DEPLOYMENT.md). Everything specific to the worker is documented
+here and nowhere else.
 
 One `GET /warm` every 10 minutes does two jobs:
 
