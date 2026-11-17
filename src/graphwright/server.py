@@ -28,7 +28,9 @@ server = MCPServer(
         'You can read and write a Neo4j graph. Use `read` for MATCH/RETURN queries; '
         'writes fail there. Use `edit` for CREATE, MERGE, SET, DELETE, REMOVE, indexes '
         'and constraints -- it is unrestricted, so prefer MERGE over CREATE when you '
-        'want idempotent writes, and read before deleting.'
+        'want idempotent writes, and read before deleting. Before introducing a node '
+        'label or a relationship type, run db.labels() and db.relationshipTypes() and '
+        'reuse the existing vocabulary instead of inventing a near-duplicate.'
     ),
 )
 
@@ -49,7 +51,9 @@ async def get_client() -> GraphClient:
 @server.tool(
     description=(
         'Run a read-only Cypher query and return rows as JSON. Writes are rejected '
-        'because the session uses READ access mode. Use $params for values.'
+        'because the session uses READ access mode. Use $params for values. '
+        'Vocabulary introspection: CALL db.labels(), CALL db.relationshipTypes(), '
+        'CALL db.propertyKeys().'
     )
 )
 async def read(
@@ -69,7 +73,13 @@ async def read(
     description=(
         'Run arbitrary Cypher with full write access: CREATE, MERGE, SET, DELETE, '
         'DETACH DELETE, index and constraint DDL. Pass a list to run several '
-        'statements atomically in one transaction. No checks are applied.'
+        'statements atomically in one transaction. No checks are applied. '
+        'Statements in the list do NOT share variables: re-MATCH what you need in each '
+        'statement, or use one statement with multiple clauses. '
+        'Before introducing a node label or a relationship type, check the existing '
+        'vocabulary with read("CALL db.labels()") and '
+        'read("CALL db.relationshipTypes()"), then reuse those exact names '
+        '(Person not People; WORKS_AT not EMPLOYED_BY).'
     )
 )
 async def edit(

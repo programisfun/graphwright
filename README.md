@@ -21,6 +21,16 @@ Consequences:
 - Anyone who can reach the port can also run `DROP CONSTRAINT` or create millions of
   nodes. Treat it like a database shell, because it is one.
 
+### Vocabulary discipline (prompt, not enforcement)
+
+The tool descriptions tell the client to run `CALL db.labels()` and
+`CALL db.relationshipTypes()` **before introducing a new node label or relationship
+type**, and to reuse the existing names (`Person` not `People`, `WORKS_AT` not
+`EMPLOYED_BY`). This is guidance only — nothing blocks a duplicate label. If drift
+matters, check `read("CALL db.labels()")` yourself, or add a label whitelist.
+Relationship types drift more than labels in practice, because both spellings read
+naturally to a model.
+
 ## Run
 
 ```powershell
@@ -86,16 +96,28 @@ Tools then appear as `graphwright_read` and `graphwright_edit`.
 // read
 { "cypher": "MATCH (p:Person)-[r:KNOWS]->(f) RETURN p.name AS who, f.name AS friend", "max_rows": 100 }
 
-// edit (atomic: all statements or none)
-{ "cypher": [
-    "MERGE (p:Person {name: $name}) SET p.updated_at = datetime()",
-    "MERGE (c:Company {name: $company})",
-    "MERGE (p)-[:WORKS_AT {since: date($since)}]->(c)"
-  ],
+// edit — one statement, so the clauses share variable scope
+{ "cypher": "MERGE (p:Person {name: $name}) "
+          + "SET p.updated_at = datetime() "
+          + "MERGE (c:Company {name: $company}) "
+          + "MERGE (p)-[:WORKS_AT {since: date($since)}]->(c)",
   "params": { "name": "Kendra", "company": "Acme", "since": "2026-06-01" } }
 ```
 
 Use `$params` instead of string interpolation; values are passed to Neo4j separately.
+
+### Statements in a list do not share variables
+
+A list runs in one transaction, but each statement has its own scope. This is wrong:
+
+```jsonc
+[ "MERGE (p:Person {name: $name})",
+  "MERGE (p)-[:WORKS_AT]->(:Company {name: 'Acme'})" ]   // creates a bare node, not Kendra
+```
+
+The second statement's `p` is a **new, unbound variable**, so Neo4j creates an empty
+label-less node instead of connecting to the first one. Either re-`MATCH` in the second
+statement, or put both clauses in a single statement as shown above.
 
 ## Layout
 
