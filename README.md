@@ -159,9 +159,32 @@ Neo4j cannot live in the same deployment. Pair it with **Neo4j AuraDB Free**:
 | Neo4j | AuraDB Free (200k nodes / 400k relationships, auto-pauses after 72h idle) |
 | graphwright | Render free web service, built from `Dockerfile` |
 
-1. Create an AuraDB Free instance, note the `neo4j+s://...` URI and password.
+### Via the API (no dashboard clicking)
+
+```powershell
+# 1. Create an API key: https://dashboard.render.com/u/settings#api-keys
+# 2. Save it where the script can read it (never commit it)
+Set-Content "$HOME\.render-api-key" "rnd_..." -NoNewline
+
+# 3. Create the service and deploy
+uv run python scripts/render_deploy.py
+```
+
+The script reads `NEO4J_*` from `.env`, lets Render generate `MCP_AUTH_TOKEN`, creates
+the service if it does not exist (`plan: free`, `region: oregon`, health check
+`/health`), triggers a deploy, and polls until it goes live. `--status` prints the
+current service without deploying.
+
+The repo must be public for this path (it is), otherwise Render needs the GitHub App
+installed on the owner first.
+
+### Via the dashboard
+
+1. Create an AuraDB Free instance, note the `neo4j+s://...` URI, user and database
+   (Aura often uses the instance id for both, not `neo4j`).
 2. Push this repo, then apply `render.yaml` (Blueprint) or create a Docker web service.
-3. Set `NEO4J_URI`, `NEO4J_PASSWORD`, and a strong `MCP_AUTH_TOKEN` in the dashboard.
+3. Set `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `NEO4J_DATABASE` and a strong
+   `MCP_AUTH_TOKEN` in the dashboard. `MCP_STATELESS=1` is set by the blueprint.
 4. Client config points at the public URL with the token:
 
 ```jsonc
