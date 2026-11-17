@@ -24,16 +24,26 @@ Consequences:
 ## Run
 
 ```powershell
-docker compose up -d          # Neo4j on 127.0.0.1:7474 (UI) and 7687 (bolt)
-uv sync
-uv run graphwright            # MCP over Streamable HTTP on http://127.0.0.1:8000/mcp
+docker compose up -d          # Neo4j + graphwright, both loopback-only
+uv run python scripts/smoke_test.py
 ```
 
-Standard input/output instead of HTTP:
+| Service | Address | Notes |
+| --- | --- | --- |
+| `graphwright-mcp` | <http://127.0.0.1:8000/mcp> | MCP over Streamable HTTP, `restart: unless-stopped` |
+| `graphwright-neo4j` | 7474 (UI), 7687 (bolt) | `neo4j` / `graphwright` |
+
+For development, run the server from source instead of the container:
 
 ```powershell
-$env:MCP_TRANSPORT='stdio'; uv run graphwright
+uv sync
+uv run graphwright            # same endpoint, 127.0.0.1:8000
+$env:MCP_TRANSPORT='stdio'; uv run graphwright    # stdio instead of HTTP
+docker compose build graphwright && docker compose up -d   # rebuild after code changes
 ```
+
+The password is written twice in `docker-compose.yml` (`NEO4J_AUTH` and the
+service's `NEO4J_PASSWORD`); change both together.
 
 Smoke test (expects the HTTP server running):
 
@@ -95,5 +105,6 @@ src/graphwright/
 ├── neo4j_client.py    # driver, READ vs WRITE execution, counters
 └── serialization.py   # nodes/relationships/paths/temporal -> JSON
 scripts/smoke_test.py  # end-to-end check over HTTP
-docker-compose.yml     # Neo4j 5.26 community
+Dockerfile             # python:3.12-slim + uv, runs the MCP server
+docker-compose.yml     # Neo4j 5.26 + graphwright service
 ```
