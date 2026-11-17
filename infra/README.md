@@ -111,8 +111,15 @@ A 200 with `db_ms` proves worker â†’ Render â†’ Aura.
 
 ### 8. Confirm the schedule fires
 
-Scheduled events start up to ~10 minutes after a deploy, and `wrangler tail` does not show
-them reliably. Check Render's **app** logs (free plans have no `request` log type):
+Scheduled events start up to ~10 minutes after a deploy (Cloudflare documents up to 15), and
+`wrangler tail` does not show them reliably. Two ways to check:
+
+**Dashboard (simplest):** Workers & Pages -> `graphwright-warm` -> **Settings** ->
+**Trigger Events** -> *View events*. It keeps the last 100 cron invocations. On a new
+worker, events can take ~30 minutes to appear.
+
+**Render app logs:** free plans have no `request` log type, so query `type=app` and match
+the text.
 
 ```powershell
 $key = (Get-Content ..\scripts\.env | Select-String '^RENDER_API_KEY=').Line.Split('=',2)[1]
