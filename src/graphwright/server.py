@@ -147,50 +147,37 @@ def bind_address() -> tuple[str, int]:
     return host, port
 
 
-def check_exposure(host: str, port: int, token: str | None) -> None:
-    """Refuse to expose an unauthenticated shell on a non-loopback address.
+def check_token(token: str | None) -> None:
+    """Refuse to serve HTTP without an admin token.
 
-    Admin-only model: one token grants every tool, including destructive ones. If no
-    token is configured, the server must not be reachable from outside this machine.
-    MCP_ALLOW_INSECURE=1 opts out (e.g. a container whose published port is bound to
-    127.0.0.1 by docker-compose).
+    One rule: no token, no server. No host-based exception and no opt-out, because an
+    unauthenticated Cypher shell -- even briefly, even on loopback -- is the one
+    failure mode worth a hard stop.
     """
-    if token:
-        if len(token) < 16:
-            print(
-                f'graphwright: warning: MCP_AUTH_TOKEN is only {len(token)} chars; '
-                'generate one with: python -c "import secrets;'
-                ' print(secrets.token_urlsafe(32))"',
-                flush=True,
-            )
-        return
+    if not token:
+        raise SystemExit(
+            'graphwright: MCP_AUTH_TOKEN is not set. Every request must carry '
+            'Authorization: Bearer <token>; generate one with: '
+            'python -c "import secrets; print(secrets.token_urlsafe(32))" '
+            'and put it in .env.'
+        )
 
-    if host in ('127.0.0.1', 'localhost', '::1'):
-        return
-    if os.getenv('MCP_ALLOW_INSECURE') == '1':
+    if len(token) < 16:
         print(
-            f'graphwright: warning: no MCP_AUTH_TOKEN, listening on {host}:{port}; '
-            'MCP_ALLOW_INSECURE=1 is set',
+            f'graphwright: warning: MCP_AUTH_TOKEN is only {len(token)} chars; '
+            'generate one with: python -c "import secrets;'
+            ' print(secrets.token_urlsafe(32))"',
             flush=True,
         )
-        return
-
-    raise SystemExit(
-        f'graphwright: refusing to listen on {host}:{port} without MCP_AUTH_TOKEN. '
-        'Anyone reaching this port could run arbitrary Cypher. Set MCP_AUTH_TOKEN, '
-        'or MCP_ALLOW_INSECURE=1 only if the port is not publicly reachable.'
-    )
 
 
 def build_app() -> Any:
-    host, port = bind_address()
+    host, _ = bind_address()
     token = os.getenv('MCP_AUTH_TOKEN')
-    check_exposure(host, port, token)
+    check_token(token)
 
     app: Any = server.streamable_http_app(host=host)
-    if token:
-        app = BearerTokenMiddleware(app, token)
-    return app
+    return BearerTokenMiddleware(app, token)
 
 
 def main() -> None:

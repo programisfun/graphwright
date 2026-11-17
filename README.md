@@ -118,8 +118,7 @@ verbatim inside and outside the container.
 | `MCP_TRANSPORT` | `streamable-http` | or `stdio` |
 | `MCP_HOST` | `127.0.0.1` | `0.0.0.0` inside the container, or when `PORT` is set |
 | `MCP_PORT` | `8000` | falls back to `PORT` (PaaS convention) if unset |
-| `MCP_AUTH_TOKEN` | unset | admin token; when set, every request needs `Authorization: Bearer <token>` and all tools are allowed |
-| `MCP_ALLOW_INSECURE` | unset | `1` allows a non-loopback bind **without** a token; escape hatch only |
+| `MCP_AUTH_TOKEN` | — | **required**: admin token; every request needs `Authorization: Bearer <token>` and all tools are allowed |
 
 ### Authentication model
 
@@ -127,13 +126,10 @@ One role only: **admin**. A single shared token (`MCP_AUTH_TOKEN`) grants every 
 including `edit` and therefore `DETACH DELETE`. There are no scopes, no per-user
 identity and no audit trail.
 
-- **Enforced locally too.** The token is set in `.env`, so the container requires it;
-  clients send the header (see the client config above).
+- **Required, everywhere.** Local, container, Render — no exceptions. Without it the
+  server exits at startup: no loopback exemption, no opt-out flag.
 - Compared with `hmac.compare_digest` (constant time).
 - `/health` is exempt so platform health checks work.
-- If the token is unset, the server refuses to bind anything but loopback unless
-  `MCP_ALLOW_INSECURE=1` is set — an unauthenticated Cypher shell on a public port is
-  the one failure mode worth a hard stop.
 - Tokens shorter than 16 characters only produce a warning; generate one with
   `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
 - Rotating the token = edit `.env`, `docker compose up -d --force-recreate graphwright`,
