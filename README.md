@@ -26,13 +26,19 @@ Consequences:
 The tool descriptions tell the client to run `CALL db.labels()` and
 `CALL db.relationshipTypes()` **before introducing a new node label or relationship
 type**, and to reuse the existing names (`Person` not `People`, `WORKS_AT` not
-`EMPLOYED_BY`). For an existing label, it is also told to inspect current nodes
-(`MATCH (n:Person) RETURN keys(n) LIMIT 5`) and match their property structure —
-same property names, casing and value types — so one label does not accumulate three
-spellings of "created at". This is guidance only — nothing blocks a duplicate label.
-If drift matters, check `read("CALL db.labels()")` yourself, or add a label whitelist.
-Relationship types drift more than labels in practice, because both spellings read
-naturally to a model.
+`EMPLOYED_BY`). For an existing label, it is also told to inspect the label's whole
+property vocabulary before writing:
+
+```cypher
+MATCH (n:Person) UNWIND keys(n) AS k RETURN k, count(*) AS nodes ORDER BY nodes DESC
+MATCH (n:Person) RETURN n LIMIT 25
+```
+
+…and to match property names, casing and value types — so one label does not
+accumulate `createdAt`, `created_at` and `created`. This is guidance only — nothing
+blocks a duplicate label. If drift matters, check `read("CALL db.labels()")`
+yourself, or add a label whitelist. Relationship types drift more than labels in
+practice, because both spellings read naturally to a model.
 
 ## Run
 
