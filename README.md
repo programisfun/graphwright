@@ -97,15 +97,26 @@ Tools then appear as `graphwright_read` and `graphwright_edit`.
 
 ## Configuration
 
+Settings come from `.env` (gitignored; copy `.env.example`). Compose reads it twice:
+for `${NEO4J_PASSWORD}` substitution and as the container's `env_file` (optional —
+without it the built-in defaults apply). The container overrides `NEO4J_URI` to
+`bolt://neo4j:7687`, because inside the compose network the host `localhost` would be
+the container itself. `NEO4J_USER` and `NEO4J_DATABASE` are passed through.
+
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `NEO4J_URI` | `bolt://localhost:7687` | |
+| `NEO4J_URI` | `bolt://localhost:7687` | host-side value; use `neo4j+s://...` for AuraDB |
 | `NEO4J_USER` | `neo4j` | |
-| `NEO4J_PASSWORD` | `graphwright` | matches `docker-compose.yml` |
+| `NEO4J_PASSWORD` | `graphwright` | also sets `NEO4J_AUTH` for the Neo4j container |
 | `NEO4J_DATABASE` | `neo4j` | |
 | `MCP_TRANSPORT` | `streamable-http` | or `stdio` |
-| `MCP_HOST` | `127.0.0.1` | keep on loopback |
+| `MCP_HOST` | `127.0.0.1` | `0.0.0.0` inside the container |
 | `MCP_PORT` | `8000` | |
+
+Do not add `NEO4J_PASSWORD` as an environment variable on the **neo4j** service: the
+image maps it to a `server.password` setting that does not exist, and startup fails
+with "Unrecognized setting. No declared setting with name: PASSWORD". The healthcheck
+interpolates `${NEO4J_PASSWORD}` instead.
 
 ## Example calls
 
