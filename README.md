@@ -149,10 +149,15 @@ identity and no audit trail.
 `MCP_PORT` takes precedence over `PORT`, so **do not set `MCP_PORT` on a PaaS** — the
 platform routes traffic to `PORT`.
 
-## Deploying to Hugging Face Spaces (no card)
+## Deploying to Hugging Face Spaces
 
-Free `cpu-basic`: 2 vCPU / 16 GB, Docker Spaces, sleeps after ~48 h idle (not 15 min),
-secrets injected as env vars. Deployable entirely through the API.
+> **Blocked as of 2026:** free `cpu-basic` now covers **static Spaces only** — creating a
+> Docker or Gradio Space returns `402 Payment Required` ("requires a PRO subscription").
+> The script is kept for when a PRO plan exists; it works unchanged once the account can
+> create Docker Spaces.
+
+Free-ish Docker onboarding: 2 vCPU / 16 GB, sleeps after ~48 h idle, secrets injected as
+env vars. Deployable entirely through the API.
 
 ```powershell
 # once: write token from https://huggingface.co/settings/tokens (no card)
