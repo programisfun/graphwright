@@ -149,6 +149,35 @@ identity and no audit trail.
 `MCP_PORT` takes precedence over `PORT`, so **do not set `MCP_PORT` on a PaaS** — the
 platform routes traffic to `PORT`.
 
+## Deploying to Hugging Face Spaces (no card)
+
+Free `cpu-basic`: 2 vCPU / 16 GB, Docker Spaces, sleeps after ~48 h idle (not 15 min),
+secrets injected as env vars. Deployable entirely through the API.
+
+```powershell
+# once: write token from https://huggingface.co/settings/tokens (no card)
+# add this line to scripts/.env
+# HF_TOKEN=hf_...
+
+uv run python scripts/hf_deploy.py            # create Space, upload, set secrets, poll
+uv run python scripts/hf_deploy.py --status   # stage + URL
+```
+
+The script creates `<you>/graphwright` as a Docker Space, uploads the repo while
+excluding every `.env`, pushes `NEO4J_*` and `MCP_AUTH_TOKEN` as **Space secrets**,
+sets `MCP_HOST=0.0.0.0`, `MCP_PORT=7860`, `MCP_STATELESS=1`, writes the Space README
+with `sdk: docker` front matter, and waits until the runtime reports `RUNNING`.
+
+| | Value |
+| --- | --- |
+| MCP endpoint | `https://<user>-graphwright.hf.space/mcp` |
+| Health | `https://<user>-graphwright.hf.space/health` |
+| Visibility | public Space; the bearer token protects the graph, not the URL |
+| Custom domain | PRO only |
+
+Note the port: HF routes to **7860** by default, so `MCP_PORT=7860` (not 8000) is
+required, otherwise the health check and MCP endpoint are unreachable.
+
 ## Deploying to Render (free plan)
 
 Render does not support `docker-compose.yml` — it builds the `Dockerfile` instead, so
